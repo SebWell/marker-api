@@ -3,6 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Dependances systeme pour Marker (OpenCV, etc.)
+# + tesseract et ocrmypdf pour OCR CPU optimise
 RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     libglib2.0-0 \
@@ -10,6 +11,11 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     libgomp1 \
+    tesseract-ocr \
+    tesseract-ocr-fra \
+    tesseract-ocr-eng \
+    ocrmypdf \
+    ghostscript \
     && rm -rf /var/lib/apt/lists/*
 
 # Copier requirements et installer

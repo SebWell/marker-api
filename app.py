@@ -9,6 +9,12 @@ import tempfile
 import os
 import time
 
+# Configuration pour CPU (VPS sans GPU)
+# Forcer l'utilisation du CPU
+os.environ["TORCH_DEVICE"] = "cpu"
+# Utiliser ocrmypdf (plus rapide que surya sur CPU)
+os.environ["OCR_ENGINE"] = "ocrmypdf"
+
 app = Flask(__name__)
 
 # Variables globales pour les modeles (charges une seule fois)
