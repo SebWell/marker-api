@@ -8,6 +8,8 @@ from flask import Flask, request, jsonify
 import tempfile
 import os
 import time
+import requests
+from urllib.parse import urlparse
 
 # Configuration pour CPU (VPS sans GPU)
 # Forcer l'utilisation du CPU
@@ -62,17 +64,42 @@ def get_converter():
         raise
 
 
+def download_pdf_from_url(url, timeout=120):
+    """
+    Télécharge un PDF depuis une URL.
+
+    Args:
+        url: URL du PDF
+        timeout: Timeout en secondes (défaut: 120 pour gros PDFs)
+
+    Returns:
+        bytes: Contenu du PDF
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ('http', 'https'):
+        raise ValueError(f"URL invalide: schéma '{parsed.scheme}' non supporté")
+
+    response = requests.get(url, timeout=timeout)
+    response.raise_for_status()
+
+    return response.content
+
+
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({
         "service": "Marker PDF to Markdown API",
-        "version": "1.0.0",
-        "description": "Conversion PDF scannes -> Markdown structure via ML",
+        "version": "1.1.0",
+        "description": "Conversion PDF scannés -> Markdown structuré via ML",
         "endpoints": {
-            "/convert": "POST - Convertir un PDF en Markdown structure",
-            "/health": "GET - Verifier l'etat du service"
+            "/convert": "POST - Convertir un PDF en Markdown (multipart ou URL)",
+            "/health": "GET - Vérifier l'état du service"
         },
-        "note": "Premier appel peut etre lent (chargement des modeles ~2-3 GB)"
+        "input_methods": {
+            "multipart": "Envoyer un fichier via 'file' (multipart/form-data)",
+            "url": "Envoyer une URL de PDF dans JSON {'url': 'https://...'}"
+        },
+        "note": "Premier appel peut être lent (chargement des modèles ~2-3 GB)"
     })
 
 
@@ -88,35 +115,42 @@ def health():
 @app.route("/convert", methods=["POST"])
 def convert():
     """
-    Convertit un PDF en Markdown structure.
+    Convertit un PDF en Markdown structuré.
 
     Accepte:
     - multipart/form-data avec fichier 'file'
+    - JSON avec 'url' pour télécharger le PDF depuis une URL
 
     Retourne:
     - markdown: Texte au format Markdown avec structure (#, ##, ###)
     - source: "marker"
-    - has_structure: True si des titres ont ete detectes
-    - pages_count: Nombre de pages traitees
+    - has_structure: True si des titres ont été détectés
+    - pages_count: Nombre de pages traitées
     """
     try:
-        # Verifier qu'un fichier est fourni
-        if "file" not in request.files:
+        pdf_content = None
+
+        # Option 1: Fichier uploadé
+        if "file" in request.files:
+            file = request.files["file"]
+            if not file.filename:
+                return jsonify({"error": "Nom de fichier vide"}), 400
+            pdf_content = file.read()
+
+        # Option 2: URL dans JSON
+        elif request.is_json and "url" in request.json:
+            url = request.json["url"]
+            pdf_content = download_pdf_from_url(url)
+
+        else:
             return jsonify({
                 "error": "Aucun fichier fourni",
-                "usage": "Envoyez un PDF via 'file' (multipart/form-data)"
-            }), 400
-
-        file = request.files["file"]
-
-        if not file.filename:
-            return jsonify({
-                "error": "Nom de fichier vide"
+                "usage": "Envoyez un PDF via 'file' (multipart) ou via 'url' (JSON)"
             }), 400
 
         # Sauvegarder temporairement
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
-            file.save(tmp.name)
+            tmp.write(pdf_content)
             tmp_path = tmp.name
 
         try:
