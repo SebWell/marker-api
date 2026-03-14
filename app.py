@@ -19,6 +19,9 @@ os.environ["OCR_ENGINE"] = "ocrmypdf"
 
 app = Flask(__name__)
 
+# Limite de taille fichier (defaut 50MB)
+MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE_MB", "50")) * 1024 * 1024
+
 # Variables globales pour les modeles (charges une seule fois)
 converter = None
 models_loaded = False
@@ -82,14 +85,18 @@ def download_pdf_from_url(url, timeout=120):
     response = requests.get(url, timeout=timeout)
     response.raise_for_status()
 
-    return response.content
+    content = response.content
+    if len(content) > MAX_FILE_SIZE:
+        raise ValueError(f"Fichier trop gros: {len(content) / 1024 / 1024:.1f}MB (max {MAX_FILE_SIZE / 1024 / 1024:.0f}MB)")
+
+    return content
 
 
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({
         "service": "Marker PDF to Markdown API",
-        "version": "1.1.0",
+        "version": "2.0.0",
         "description": "Conversion PDF scannés -> Markdown structuré via ML",
         "endpoints": {
             "/convert": "POST - Convertir un PDF en Markdown (multipart ou URL)",
@@ -195,7 +202,10 @@ def convert():
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
 
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
+        print(f"Convert error: {e}")
         return jsonify({
             "success": False,
             "error": str(e)

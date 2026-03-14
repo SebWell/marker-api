@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-eng \
     ocrmypdf \
     ghostscript \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copier requirements et installer
@@ -27,11 +28,16 @@ COPY app.py .
 
 # Variables d'environnement
 ENV PORT=5000
-ENV PRELOAD_MODELS=false
+ENV PRELOAD_MODELS=true
 
 # Expose le port
 EXPOSE 5000
 
-# Commande de demarrage avec gunicorn
-# Timeout eleve car le premier appel charge les modeles (~2-3min)
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--timeout", "600", "--workers", "1", "app:app"]
+# Healthcheck (start-period eleve: chargement modeles ~2-3 min)
+HEALTHCHECK --interval=30s --timeout=30s --start-period=300s --retries=3 \
+    CMD curl -f http://localhost:5000/health || exit 1
+
+# Demarrage avec gunicorn
+# --preload: charge l'app (et les modeles) avant de forker le worker
+# --timeout 600: 10 min max par requete (gros PDFs)
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--timeout", "600", "--workers", "1", "--preload", "app:app"]
